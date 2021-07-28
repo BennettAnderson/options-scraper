@@ -17,8 +17,11 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class Application {
 
     private List<Contract> contractList = new ArrayList<>();
+    private List<Contract> filteredList = new ArrayList<>();
     private Document doc;
+    private Document priceDoc;
     private String ticker;
+    private String currentPrice;
 
     public static void main(String[] args) {
         Application application = new Application();
@@ -28,6 +31,7 @@ public class Application {
     private void run() {
         getTicker();
         populateContracts();
+        setFilteredList();
         printContracts();
     }
 
@@ -39,6 +43,8 @@ public class Application {
         try {
             doc = Jsoup.connect("https://finance.yahoo.com/quote/" + ticker + "/options").get();
 
+            currentPrice = doc.select("#quote-header-info > div:eq(2) > div:eq(0) > div:eq(0) > span:eq(0)").text();
+
             Elements contracts = doc.getElementsByClass("BdT");
 
             for (Element contract : contracts) {
@@ -46,11 +52,11 @@ public class Application {
                 Contract newContract = new Contract();
 
                 String name = contract.select(".data-col0 > a").text();
-                String strike = contract.select(".data-col2 > a").text();
-                String price = contract.select(".data-col3").text();
-                String bid = contract.select(".data-col4").text();
-                String ask = contract.select(".data-col5").text();
-                String change = contract.select(".data-col6 span").text();
+                String strike = contract.select(".data-col2 > a").text().replaceAll(",", "");
+                String price = contract.select(".data-col3").text().replaceAll(",", "");
+                String bid = contract.select(".data-col4").text().replaceAll(",", "");
+                String ask = contract.select(".data-col5").text().replaceAll(",", "");
+                String change = contract.select(".data-col6 span").text().replaceAll(",", "");
                 String percentChange = contract.select(".data-col7 > span").text().replaceAll("%", "");
                 String volume = contract.select(".data-col8").text().replaceAll(",", "");
                 String openInterest = contract.select(".data-col9").text().replaceAll(",", "");
@@ -94,22 +100,34 @@ public class Application {
         }
     }
 
+    private boolean strategy(Contract contract) {
+        return contract.getVolatility() <= 60 && contract.getType().equals("CALL") && contract.getStrike() > contract.getPrice();
+    }
+
+    private void setFilteredList() {
+        for (Contract contract : contractList) {
+            if (strategy(contract)) {
+                filteredList.add(contract);
+            }
+        }
+    }
+
     private void printContracts() {
         System.out.printf("Title: %s\n", doc.title());
+        System.out.println("Stock price: " + currentPrice);
         System.out.print("\n________________________________________________________________________________________________________________________________________________");
         System.out.format("\n%6s" + " | " + "%19s" + " | " + "%7s" + " | " + "%7s" + " | " + "%7s" + " | " + "%7s" +
                         " | " + "%7s" + " | " + "%7s" + " | " + "%7s" + " | " + "%7s" + " | " + "%7s" + " | " +
                         "%11s", "Type", "Contract Name", "Strike", "Price", "Bid", "Ask", "Change", "% Change", "Volume",
                 "Open Interest", "Volatility", "Expiration");
         System.out.print("\n________________________________________________________________________________________________________________________________________________");
-        for (Contract contract : contractList) {
+        for (Contract contract : filteredList) {
             System.out.format("\n%6s" + " | " + "%19s" + " | " + "%7s" + " | " + "%7s" + " | " + "%7s" + " | " + "%7s" +
                             " | " + "%7s" + " | " + "%8s" + " | " + "%7s" + " | " + "%13s" + " | " + "%10s" + " | " +
                             "%11s", contract.getType(), contract.getName(), contract.getStrike(), contract.getPrice(),
                     contract.getBid(), contract.getAsk(), contract.getChange(), contract.getPercentChange(),
                     contract.getVolume(), contract.getOpenInterest(), contract.getVolatility(), contract.getExpiration());
         }
-        System.out.println("hello");
     }
 
     private String getUserInput(String prompt) {
@@ -117,4 +135,5 @@ public class Application {
         return new Scanner(System.in).nextLine();
     }
 }
-
+//html > body > div:eq(1) > div > div > div:eq(1) > div > div:eq(2) > div > div > div:eq(5) > div > div > div > div:eq(3) > div:eq(1) > div:eq(1) > span:eq(1)
+//#quote-header-info > div.My\(6px\).Pos\(r\).smartphone_Mt\(6px\) > div.D\(ib\).Va\(m\).Maw\(65\%\).Ov\(h\) > div.D\(ib\).Mend\(20px\) > span.Trsdu\(0\.3s\).Fw\(b\).Fz\(36px\).Mb\(-4px\).D\(ib\)
