@@ -19,9 +19,9 @@ public class Application {
     private List<Contract> contractList = new ArrayList<>();
     private List<Contract> filteredList = new ArrayList<>();
     private Document doc;
-    private Document priceDoc;
     private String ticker;
     private String currentPrice;
+    private List<String> dates = new ArrayList<>();
 
     public static void main(String[] args) {
         Application application = new Application();
@@ -30,6 +30,7 @@ public class Application {
 
     private void run() {
         getTicker();
+        getBasicInfo();
         populateContracts();
         setFilteredList();
         printContracts();
@@ -39,61 +40,76 @@ public class Application {
         ticker = getUserInput("Stock ticker");
     }
 
-    private void populateContracts() {
+    private void getBasicInfo() {
         try {
             doc = Jsoup.connect("https://finance.yahoo.com/quote/" + ticker + "/options").get();
-
             currentPrice = doc.select("#quote-header-info > div:eq(2) > div:eq(0) > div:eq(0) > span:eq(0)").text();
 
-            Elements contracts = doc.getElementsByClass("BdT");
+            Elements dateValues = doc.select("#Col1-1-OptionContracts-Proxy > section:eq(0) > div:eq(0) > div:eq(0) > select:eq(0) > option");
+            for (Element element : dateValues) {
+                dates.add(element.attr("value"));
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 
-            for (Element contract : contracts) {
+    private void populateContracts() {
+        try {
 
-                Contract newContract = new Contract();
+            for (String date : dates) {
+                Document thisDoc = Jsoup.connect("https://finance.yahoo.com/quote/" + ticker + "/options?date=" + date).get();
 
-                String name = contract.select(".data-col0 > a").text();
-                String strike = contract.select(".data-col2 > a").text().replaceAll(",", "");
-                String price = contract.select(".data-col3").text().replaceAll(",", "");
-                String bid = contract.select(".data-col4").text().replaceAll(",", "");
-                String ask = contract.select(".data-col5").text().replaceAll(",", "");
-                String change = contract.select(".data-col6 span").text().replaceAll(",", "");
-                String percentChange = contract.select(".data-col7 > span").text().replaceAll("%", "");
-                String volume = contract.select(".data-col8").text().replaceAll(",", "");
-                String openInterest = contract.select(".data-col9").text().replaceAll(",", "");
-                String volatility = contract.select(".data-col10").text().replaceAll("%", "").replaceAll(",", "");
+                Elements contracts = thisDoc.getElementsByClass("BdT");
 
-                if (name.charAt(name.length() - 9) == 'C') {
-                    newContract.setType("CALL");
-                } else {
-                    newContract.setType("PUT");
+                for (Element contract : contracts) {
+
+                    Contract newContract = new Contract();
+
+                    String name = contract.select(".data-col0 > a").text();
+                    String strike = contract.select(".data-col2 > a").text().replaceAll(",", "");
+                    String price = contract.select(".data-col3").text().replaceAll(",", "");
+                    String bid = contract.select(".data-col4").text().replaceAll(",", "");
+                    String ask = contract.select(".data-col5").text().replaceAll(",", "");
+                    String change = contract.select(".data-col6 span").text().replaceAll(",", "");
+                    String percentChange = contract.select(".data-col7 > span").text().replaceAll("%", "").replaceAll(",", "");
+                    String volume = contract.select(".data-col8").text().replaceAll(",", "");
+                    String openInterest = contract.select(".data-col9").text().replaceAll(",", "");
+                    String volatility = contract.select(".data-col10").text().replaceAll("%", "").replaceAll(",", "");
+
+                    if (name.charAt(name.length() - 9) == 'C') {
+                        newContract.setType("CALL");
+                    } else {
+                        newContract.setType("PUT");
+                    }
+                    newContract.setName(name);
+                    newContract.setStrike(Double.parseDouble(strike));
+                    newContract.setPrice(Double.parseDouble(price));
+                    if (!bid.equals("-")) {
+                        newContract.setBid(Double.parseDouble(bid));
+                    }
+                    newContract.setAsk(Double.parseDouble(ask));
+                    newContract.setChange(Double.parseDouble(change));
+                    if (!percentChange.equals("-")) {
+                        newContract.setPercentChange(Double.parseDouble(percentChange));
+                    }
+                    if (!volume.equals("-")) {
+                        newContract.setVolume(Integer.parseInt(volume));
+                    }
+                    if (!openInterest.equals("-")) {
+                        newContract.setOpenInterest(Integer.parseInt(openInterest));
+                    }
+                    newContract.setVolatility(Double.parseDouble(volatility));
+
+                    //set date using Standard Equity Option Convention
+                    String expiration = name.substring(name.length() - 13, name.length() - 11) + "/" +
+                            name.substring(name.length() - 11, name.length() - 9) + "/" + "20" +
+                            name.substring(name.length() - 15, name.length() - 13);
+                    newContract.setExpiration(expiration);
+
+                    contractList.add(newContract);
+
                 }
-                newContract.setName(name);
-                newContract.setStrike(Double.parseDouble(strike));
-                newContract.setPrice(Double.parseDouble(price));
-                if (!bid.equals("-")) {
-                    newContract.setBid(Double.parseDouble(bid));
-                }
-                newContract.setAsk(Double.parseDouble(ask));
-                newContract.setChange(Double.parseDouble(change));
-                if (!percentChange.equals("-")) {
-                    newContract.setPercentChange(Double.parseDouble(percentChange));
-                }
-                if (!volume.equals("-")) {
-                    newContract.setVolume(Integer.parseInt(volume));
-                }
-                if (!openInterest.equals("-")) {
-                    newContract.setOpenInterest(Integer.parseInt(openInterest));
-                }
-                newContract.setVolatility(Double.parseDouble(volatility));
-
-                //set date using Standard Equity Option Convention
-                String expiration = name.substring(name.length() - 13, name.length() - 11) + "/" +
-                        name.substring(name.length() - 11, name.length() - 9) + "/" + "20" +
-                        name.substring(name.length() - 15, name.length() - 13);
-                newContract.setExpiration(expiration);
-
-                contractList.add(newContract);
-
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -101,7 +117,7 @@ public class Application {
     }
 
     private boolean strategy(Contract contract) {
-        return contract.getVolatility() <= 60 && contract.getType().equals("CALL") && contract.getStrike() > contract.getPrice();
+        return contract.getVolatility() <= 100 && contract.getVolatility() >= 60 && contract.getStrike() > contract.getPrice();
     }
 
     private void setFilteredList() {
